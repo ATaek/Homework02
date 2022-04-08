@@ -1,0 +1,136 @@
+---
+title: "121HW2"
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r,include = FALSE}
+library(tidyverse)
+library(tidymodels)
+library(corrplot)
+library(ggplot2)
+library(dplyr)
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Linear Regression
+```{r,include = F}
+abalone <- read.csv(file = "ABALONE.csv", header=TRUE, stringsAsFactors=FALSE)
+head(abalone)
+```
+### Question 1
+
+Your goal is to predict abalone age, which is calculated as the number of rings plus 1.5. Notice there currently is no `age` variable in the data set. Add `age` to the data set.
+
+Assess and describe the distribution of `age`.
+
+```{r}
+abalone['age'] <- abalone$rings + 1.5
+abalone %>% 
+  ggplot(aes(x = age)) +
+  geom_histogram(bins=30)
+```
+  
+The distribution of age seems to be very slightly right skewed and unimodal with most of the abalone in the dataset seem to be around 10 years old. There are very few abalone below 5 and above 20 years old. 
+  
+### Question 2
+
+Split the abalone data into a training set and a testing set. Use stratified sampling. You should decide on appropriate percentages for splitting the data.
+
+```{r}
+set.seed(3435)
+abalone_split <- initial_split(abalone, prop = 0.80,
+                                strata = age)
+abalone_train <- training(abalone_split)
+abalone_test <- testing(abalone_split)
+```
+
+### Question 3
+
+Using the **training** data, create a recipe predicting the outcome variable, `age`, with all other predictor variables. Note that you should not include `rings` to predict `age`. Explain why you shouldn't use `rings` to predict `age`.
+
+Steps for your recipe:
+
+1.  dummy code any categorical predictors
+
+2.  create interactions between
+
+    -   `type` and `shucked_weight`,
+    -   `longest_shell` and `diameter`,
+    -   `shucked_weight` and `shell_weight`
+
+3.  center all predictors, and
+
+4.  scale all predictors.
+
+You'll need to investigate the `tidymodels` documentation to find the appropriate step functions to use.
+   
+```{r}
+simple_abalone_recipe <-
+  recipe(age ~ type+longest_shell+diameter+height+whole_weight+shucked_weight+viscera_weight+shell_weight,data = abalone_train) %>%
+  step_dummy(all_nominal_predictors())  %>% 
+  step_interact(terms = ~ type_I:shucked_weight + type_M:shucked_weight + longest_shell:diameter + shucked_weight:shell_weight) %>%
+  step_normalize(all_predictors())
+```
+  
+Age is directly dependent on rings so it wouldn't make sense to use that as a predictor since the age of an abalone is just the amount of rings +1.5. Also,if we are attempting to make a predictive model for the age of abalone, we cannot accurately identify the relationships between the response and predictors if rings is in the model.
+   
+
+### Question 4
+
+Create and store a linear regression object using the `"lm"` engine.
+```{r}
+lm_model <- linear_reg() %>% 
+  set_engine("lm")
+```
+### Question 5
+
+Now:
+
+1.  set up an empty workflow,
+2.  add the model you created in Question 4, and
+3.  add the recipe that you created in Question 3.
+   
+
+```{r}
+lm_wflow <- workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(simple_abalone_recipe)
+lm_fit <- fit(lm_wflow, abalone_train)
+lm_fit
+```
+  
+### Question 6
+
+Use your `fit()` object to predict the age of a hypothetical female abalone with longest_shell = 0.50, diameter = 0.10, height = 0.30, whole_weight = 4, shucked_weight = 1, viscera_weight = 2, shell_weight = 1.
+```{r}
+x0 <- data.frame(type = "F",longest_shell = 0.50, diameter = 0.10, height = 0.30, whole_weight = 4, shucked_weight = 1, viscera_weight = 2, shell_weight = 1,rings = 0)
+abalone_x0_predicted <- predict(lm_fit, new_data = x0)
+abalone_x0_predicted
+
+```
+  
+Using predict() the age of this hypothetical abalone is around 23.702.
+  
+### Question 7
+
+Now you want to assess your model's performance. To do this, use the `yardstick` package:
+
+1.  Create a metric set that includes *R^2^*, RMSE (root mean squared error), and MAE (mean absolute error).
+2.  Use `predict()` and `bind_cols()` to create a tibble of your model's predicted values from the **training data** along with the actual observed ages (these are needed to assess your model's performance).
+3.  Finally, apply your metric set to the tibble, report the results, and interpret the *R^2^* value.
+
+```{r,output = FALSE}
+abalone_train_res <- predict(lm_fit, new_data = abalone_train %>% select(-age))
+abalone_train_res <- bind_cols(abalone_train_res, abalone_train %>% select(age))
+abalone_metrics <- metric_set(rmse, rsq, mae)
+```
+```{r}
+abalone_metrics(abalone_train_res, truth = age, 
+                estimate = .pred)
+```
+
+  
+Because the R^2 value is around .5513, or 55%, a little over half of the observed variation can be explained by our predictor variables. This indicates a moderately precise relationship for our model. I think it would be reasonable to use it as long as you acknowledge the unexplained variability. 
