@@ -112,7 +112,7 @@ abalone_x0_predicted
 
 ```
   
-Using predict() the age of this hypothetical abalone is around 23.702.
+Using predict() the age of this hypothetical abalone is around 23.70166 years old.
   
 ### Question 7
 
